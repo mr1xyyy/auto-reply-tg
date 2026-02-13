@@ -73,12 +73,20 @@ You asked to work with `blacklist.json` from terminal — use these commands:
 python auto_reply_userbot.py --init-files
 python auto_reply_userbot.py --show-blacklist
 python auto_reply_userbot.py --add-blacklist 123456789 987654321
+<<<<<<< codex/create-telegram-userbot-script-with-telethon-1eo4oo
+python auto_reply_userbot.py --delete-blacklist 123456789
+=======
+>>>>>>> main
 ```
 
 What they do:
 - `--init-files` creates missing files (`blacklist.json`, `replies.txt`, `replied.json`).
 - `--show-blacklist` prints the current blacklist.
 - `--add-blacklist` adds one or more user IDs to `blacklist.json`.
+<<<<<<< codex/create-telegram-userbot-script-with-telethon-1eo4oo
+- `--delete-blacklist` removes one or more user IDs from `blacklist.json`.
+=======
+>>>>>>> main
 
 ## Data file examples
 
@@ -138,4 +146,11 @@ pip install -U telethon
 python auto_reply_userbot.py
 ```
 
+<<<<<<< codex/create-telegram-userbot-script-with-telethon-1eo4oo
+The current script avoids MessageRead activity hooks entirely for maximum Telethon compatibility.
+
+
+If your traceback still shows `outbox=True`, you are running an older local copy — replace it with the latest `auto_reply_userbot.py` from this repository.
+=======
 The current script avoids `MessageRead(outbox=True)` and uses a compatibility-safe handler.
+>>>>>>> main
