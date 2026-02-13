@@ -105,6 +105,7 @@ Currently offline. Will answer when I'm back.
 ```
 
 ## Run userbot
+>>>>>>> main
 
 ```bash
 python auto_reply_userbot.py
@@ -141,3 +142,4 @@ python auto_reply_userbot.py
 ```
 
 The current script avoids `MessageRead(outbox=True)` and uses a compatibility-safe handler.
+>>>>>>> main
