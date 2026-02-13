@@ -33,8 +33,6 @@ import time
 from pathlib import Path
 from typing import List, Set
 
-from telethon import TelegramClient, events
-
 # ------------------------------
 # Configuration
 # ------------------------------

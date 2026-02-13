@@ -103,7 +103,6 @@ Currently offline. Will answer when I'm back.
 ```
 
 ## Run userbot
-## Run
 
 ```bash
 python auto_reply_userbot.py
@@ -116,3 +115,27 @@ On first run, Telethon will ask for login/verification in terminal and create a 
 - Offline behavior is based on script-side activity tracking and `OFFLINE_THRESHOLD_SECONDS = 180`.
 - Auto-reply is sent only for private chats.
 - If `replies.txt` is missing, script creates it with a default reply.
+
+
+## Troubleshooting (CMD/PowerShell)
+
+If you see an error like:
+
+`TypeError: MessageRead.__init__() got an unexpected keyword argument 'outbox'`
+
+do the following:
+
+1. Make sure you are running the **latest script** from this repository.
+2. Upgrade Telethon:
+
+```bash
+pip install -U telethon
+```
+
+3. Start again:
+
+```bash
+python auto_reply_userbot.py
+```
+
+The current script avoids `MessageRead(outbox=True)` and uses a compatibility-safe handler.
