@@ -10,6 +10,7 @@ This project provides a Python **userbot** script that automatically replies to 
 - Sends only **one** auto-reply per user, tracked in `replied.json`.
 - Async implementation with **Telethon**.
 - Works from terminal on **CMD / PowerShell / Linux shell**.
+- Supports blacklist management directly from terminal commands.
 
 ## File Structure
 
@@ -64,6 +65,21 @@ python auto_reply_userbot.py
 
 > You can also put credentials into fallback constants inside `auto_reply_userbot.py`, but environment variables are safer.
 
+## Manage blacklist from terminal
+
+You asked to work with `blacklist.json` from terminal — use these commands:
+
+```bash
+python auto_reply_userbot.py --init-files
+python auto_reply_userbot.py --show-blacklist
+python auto_reply_userbot.py --add-blacklist 123456789 987654321
+```
+
+What they do:
+- `--init-files` creates missing files (`blacklist.json`, `replies.txt`, `replied.json`).
+- `--show-blacklist` prints the current blacklist.
+- `--add-blacklist` adds one or more user IDs to `blacklist.json`.
+
 ## Data file examples
 
 ### `blacklist.json`
@@ -86,6 +102,7 @@ Currently offline. Will answer when I'm back.
 []
 ```
 
+## Run userbot
 ## Run
 
 ```bash

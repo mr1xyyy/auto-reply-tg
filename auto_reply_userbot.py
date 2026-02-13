@@ -6,9 +6,15 @@ Features:
 - Skips users in blacklist.json.
 - Picks random reply templates from replies.txt.
 - Sends only one auto-reply per user (tracked in replied.json).
+- Supports blacklist management from terminal arguments.
 
 Run:
     python auto_reply_userbot.py
+
+Useful terminal commands:
+    python auto_reply_userbot.py --init-files
+    python auto_reply_userbot.py --show-blacklist
+    python auto_reply_userbot.py --add-blacklist 12345 67890
 
 Environment variables (recommended):
     API_ID=<your_api_id>
@@ -17,6 +23,7 @@ Environment variables (recommended):
 Optional constants fallback is also supported below.
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -72,6 +79,17 @@ replies_pool: List[str] = []
 # File helpers
 # ------------------------------
 
+def save_json_list(path: Path, values: Set[int]) -> None:
+    """Save integer IDs as sorted JSON list."""
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(sorted(values), f, indent=2)
+
+
+def load_blacklist(path: Path) -> Set[int]:
+    """Load blacklist IDs from JSON file. Returns an empty set if missing/invalid."""
+    if not path.exists():
+        logging.warning("%s not found. Creating empty blacklist.", path)
+        save_json_list(path, set())
 def load_blacklist(path: Path) -> Set[int]:
     """Load blacklist IDs from JSON file. Returns an empty set if missing/invalid."""
     if not path.exists():
@@ -83,11 +101,15 @@ def load_blacklist(path: Path) -> Set[int]:
             data = json.load(f)
 
         if not isinstance(data, list):
+            logging.warning("%s should contain a JSON list. Resetting to empty list.", path)
+            save_json_list(path, set())
             logging.warning("%s should contain a JSON list. Using empty blacklist.", path)
             return set()
 
         return {int(user_id) for user_id in data}
     except Exception as exc:
+        logging.warning("Failed to read %s (%s). Resetting to empty blacklist.", path, exc)
+        save_json_list(path, set())
         logging.warning("Failed to read %s (%s). Using empty blacklist.", path, exc)
         return set()
 
@@ -117,6 +139,7 @@ def load_replied(path: Path) -> Set[int]:
 
 def save_replied(path: Path, replied_ids: Set[int]) -> None:
     """Persist replied user IDs to disk as a JSON list."""
+    save_json_list(path, replied_ids)
     with path.open("w", encoding="utf-8") as f:
         json.dump(sorted(replied_ids), f, indent=2)
 
@@ -135,6 +158,68 @@ def load_replies(path: Path) -> List[str]:
         replies = ["I'm currently away. I'll get back to you soon."]
 
     return replies
+
+
+def ensure_data_files_exist() -> None:
+    """Ensure all required local data files exist with safe defaults."""
+    if not BLACKLIST_PATH.exists():
+        save_json_list(BLACKLIST_PATH, set())
+    if not REPLIED_PATH.exists():
+        save_replied(REPLIED_PATH, set())
+    if not REPLIES_PATH.exists():
+        REPLIES_PATH.write_text("I'm currently away. I'll get back to you soon.\n", encoding="utf-8")
+
+
+# ------------------------------
+# CLI helpers
+# ------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    """Create command-line parser for runtime/config operations."""
+    parser = argparse.ArgumentParser(
+        description="Telethon offline auto-reply userbot",
+    )
+    parser.add_argument(
+        "--init-files",
+        action="store_true",
+        help="Create blacklist.json, replies.txt and replied.json if missing.",
+    )
+    parser.add_argument(
+        "--show-blacklist",
+        action="store_true",
+        help="Print current blacklist user IDs and exit.",
+    )
+    parser.add_argument(
+        "--add-blacklist",
+        nargs="+",
+        type=int,
+        metavar="USER_ID",
+        help="Add one or more user IDs to blacklist.json and exit.",
+    )
+    return parser
+
+
+def handle_cli_actions(args: argparse.Namespace) -> bool:
+    """Run requested CLI management operations. Returns True if script should exit."""
+    ensure_data_files_exist()
+
+    if args.init_files:
+        print("Initialized: blacklist.json, replies.txt, replied.json")
+        return True
+
+    if args.show_blacklist:
+        blacklist = sorted(load_blacklist(BLACKLIST_PATH))
+        print("Blacklist:", blacklist)
+        return True
+
+    if args.add_blacklist:
+        blacklist = load_blacklist(BLACKLIST_PATH)
+        blacklist.update(args.add_blacklist)
+        save_json_list(BLACKLIST_PATH, blacklist)
+        print("Updated blacklist:", sorted(blacklist))
+        return True
+
+    return False
 
 
 # ------------------------------
@@ -161,6 +246,10 @@ async def main() -> None:
     """Entrypoint for running the Telethon userbot."""
     global blacklist_user_ids, replied_user_ids, replies_pool
 
+    # Import Telethon only when actually starting the bot,
+    # so terminal maintenance commands work without this dependency.
+    from telethon import TelegramClient, events
+
     # Resolve credentials with env-first and constant fallback strategy.
     api_id = API_ID if API_ID else API_ID_FALLBACK
     api_hash = API_HASH if API_HASH else API_HASH_FALLBACK
@@ -170,6 +259,8 @@ async def main() -> None:
             "Missing Telegram credentials. Set API_ID and API_HASH environment variables "
             "or update API_ID_FALLBACK/API_HASH_FALLBACK constants."
         )
+
+    ensure_data_files_exist()
 
     # Load all data files once at startup.
     blacklist_user_ids = load_blacklist(BLACKLIST_PATH)
@@ -238,6 +329,13 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
+
+    parser = build_parser()
+    parsed_args = parser.parse_args()
+
+    # Run terminal-only maintenance actions and exit if requested.
+    if handle_cli_actions(parsed_args):
+        raise SystemExit(0)
 
     try:
         asyncio.run(main())
