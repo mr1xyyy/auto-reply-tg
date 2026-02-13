@@ -73,10 +73,8 @@ You asked to work with `blacklist.json` from terminal — use these commands:
 python auto_reply_userbot.py --init-files
 python auto_reply_userbot.py --show-blacklist
 python auto_reply_userbot.py --add-blacklist 123456789 987654321
-<<<<<<< codex/create-telegram-userbot-script-with-telethon-1eo4oo
 python auto_reply_userbot.py --delete-blacklist 123456789
-=======
->>>>>>> main
+
 ```
 
 What they do:
