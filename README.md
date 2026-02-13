@@ -138,7 +138,4 @@ pip install -U telethon
 python auto_reply_userbot.py
 ```
 
-The current script avoids MessageRead activity hooks entirely for maximum Telethon compatibility.
-
-
-If your traceback still shows `outbox=True`, you are running an older local copy — replace it with the latest `auto_reply_userbot.py` from this repository.
+The current script avoids `MessageRead(outbox=True)` and uses a compatibility-safe handler.
