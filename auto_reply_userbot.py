@@ -279,9 +279,6 @@ async def main() -> None:
     async def on_message_read(event):
         if getattr(event, "outbox", False):
             mark_activity("message read")
-    @client.on(events.MessageRead(outbox=True))
-    async def on_message_read(_event):
-        mark_activity("message read")
 
     # Auto-reply only to new incoming private messages.
     @client.on(events.NewMessage(incoming=True))
