@@ -33,6 +33,8 @@ import time
 from pathlib import Path
 from typing import List, Set
 
+from telethon import TelegramClient, events
+
 # ------------------------------
 # Configuration
 # ------------------------------
@@ -88,6 +90,10 @@ def load_blacklist(path: Path) -> Set[int]:
     if not path.exists():
         logging.warning("%s not found. Creating empty blacklist.", path)
         save_json_list(path, set())
+def load_blacklist(path: Path) -> Set[int]:
+    """Load blacklist IDs from JSON file. Returns an empty set if missing/invalid."""
+    if not path.exists():
+        logging.warning("%s not found. Using empty blacklist.", path)
         return set()
 
     try:
@@ -97,18 +103,21 @@ def load_blacklist(path: Path) -> Set[int]:
         if not isinstance(data, list):
             logging.warning("%s should contain a JSON list. Resetting to empty list.", path)
             save_json_list(path, set())
+            logging.warning("%s should contain a JSON list. Using empty blacklist.", path)
             return set()
 
         return {int(user_id) for user_id in data}
     except Exception as exc:
         logging.warning("Failed to read %s (%s). Resetting to empty blacklist.", path, exc)
         save_json_list(path, set())
+        logging.warning("Failed to read %s (%s). Using empty blacklist.", path, exc)
         return set()
 
 
 def load_replied(path: Path) -> Set[int]:
     """Load already-replied user IDs from JSON file. Creates file if missing."""
     if not path.exists():
+        # Initialize with an empty array so future runs can persist state.
         save_replied(path, set())
         return set()
 
@@ -131,6 +140,8 @@ def load_replied(path: Path) -> Set[int]:
 def save_replied(path: Path, replied_ids: Set[int]) -> None:
     """Persist replied user IDs to disk as a JSON list."""
     save_json_list(path, replied_ids)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(sorted(replied_ids), f, indent=2)
 
 
 def load_replies(path: Path) -> List[str]:
@@ -143,6 +154,7 @@ def load_replies(path: Path) -> List[str]:
     replies = [line for line in lines if line]
 
     if not replies:
+        # Guarantee at least one reply to avoid random.choice errors.
         replies = ["I'm currently away. I'll get back to you soon."]
 
     return replies
@@ -269,6 +281,9 @@ async def main() -> None:
     async def on_message_read(event):
         if getattr(event, "outbox", False):
             mark_activity("message read")
+    @client.on(events.MessageRead(outbox=True))
+    async def on_message_read(_event):
+        mark_activity("message read")
 
     # Auto-reply only to new incoming private messages.
     @client.on(events.NewMessage(incoming=True))
