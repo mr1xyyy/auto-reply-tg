@@ -7,7 +7,7 @@ Simple Telethon userbot that auto-replies to new private messages only when your
 - Auto-reply only after **3+ minutes** of inactivity.
 - Ignore users from `blacklist.json`.
 - Pick random reply from `replies.txt`.
-- Send only one auto-reply per user (`replied.json`).
+- Auto-reply to the same user no more than once per hour (`replied.json`).
 - Blacklist management from terminal.
 
 ## Files
@@ -15,7 +15,7 @@ Simple Telethon userbot that auto-replies to new private messages only when your
 - `auto_reply_userbot.py` — main script.
 - `blacklist.json` — list of blocked user IDs.
 - `replies.txt` — one reply per line.
-- `replied.json` — users already auto-replied to.
+- `replied.json` — last auto-reply timestamps per user.
 
 ## Requirements
 
@@ -63,6 +63,7 @@ python auto_reply_userbot.py --init-files
 python auto_reply_userbot.py --show-blacklist
 python auto_reply_userbot.py --add-blacklist 123456789 987654321
 python auto_reply_userbot.py --delete-blacklist 123456789
+python auto_reply_userbot.py --reset-replied
 ```
 
 ## Run
@@ -76,3 +77,6 @@ python auto_reply_userbot.py
 - Works for private chats only.
 - If `replies.txt` is missing, script creates it with a default line.
 - If you still see `outbox=True` in errors, update your local `auto_reply_userbot.py` file.
+
+
+`replied.json` format: `{ "<user_id>": <last_reply_unix_ts> }`.

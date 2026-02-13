@@ -5,7 +5,7 @@ Features:
 - Replies only when account is "offline" (no activity for 3+ minutes).
 - Skips users in blacklist.json.
 - Picks random reply templates from replies.txt.
-- Sends only one auto-reply per user (tracked in replied.json).
+- Limits auto-replies to once per user per hour (tracked in replied.json).
 - Supports blacklist management from terminal arguments.
 
 Run:
@@ -15,6 +15,8 @@ Useful terminal commands:
     python auto_reply_userbot.py --init-files
     python auto_reply_userbot.py --show-blacklist
     python auto_reply_userbot.py --add-blacklist 12345 67890
+    python auto_reply_userbot.py --delete-blacklist 12345
+    python auto_reply_userbot.py --reset-replied
 
 Environment variables (recommended):
     API_ID=<your_api_id>
@@ -31,7 +33,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import List, Set
+from typing import Dict, List, Set
 
 # ------------------------------
 # Configuration
@@ -39,7 +41,15 @@ from typing import List, Set
 
 # Read credentials from environment variables first.
 # If env vars are not set, script falls back to constants below.
-API_ID = int(os.getenv("API_ID", "0")) or 0
+def parse_api_id(value: str) -> int:
+    """Parse API_ID safely; return 0 when value is empty/invalid."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+API_ID = parse_api_id(os.getenv("API_ID", "0")) or 0
 API_HASH = os.getenv("API_HASH", "")
 
 # Optional constant fallback if you don't want to use env variables.
@@ -59,6 +69,7 @@ REPLIED_PATH = Path("replied.json")
 
 # User is considered "offline" if there was no activity for this many seconds.
 OFFLINE_THRESHOLD_SECONDS = 3 * 60
+REPLY_COOLDOWN_SECONDS = 3600
 
 # ------------------------------
 # Runtime state
@@ -69,7 +80,7 @@ last_activity_ts = time.time()
 
 # In-memory caches loaded from files.
 blacklist_user_ids: Set[int] = set()
-replied_user_ids: Set[int] = set()
+replied_user_timestamps: Dict[int, int] = {}
 replies_pool: List[str] = []
 
 
@@ -88,10 +99,6 @@ def load_blacklist(path: Path) -> Set[int]:
     if not path.exists():
         logging.warning("%s not found. Creating empty blacklist.", path)
         save_json_list(path, set())
-def load_blacklist(path: Path) -> Set[int]:
-    """Load blacklist IDs from JSON file. Returns an empty set if missing/invalid."""
-    if not path.exists():
-        logging.warning("%s not found. Using empty blacklist.", path)
         return set()
 
     try:
@@ -101,45 +108,57 @@ def load_blacklist(path: Path) -> Set[int]:
         if not isinstance(data, list):
             logging.warning("%s should contain a JSON list. Resetting to empty list.", path)
             save_json_list(path, set())
-            logging.warning("%s should contain a JSON list. Using empty blacklist.", path)
             return set()
 
         return {int(user_id) for user_id in data}
     except Exception as exc:
         logging.warning("Failed to read %s (%s). Resetting to empty blacklist.", path, exc)
         save_json_list(path, set())
-        logging.warning("Failed to read %s (%s). Using empty blacklist.", path, exc)
         return set()
 
 
-def load_replied(path: Path) -> Set[int]:
-    """Load already-replied user IDs from JSON file. Creates file if missing."""
+def load_replied(path: Path) -> Dict[int, int]:
+    """Load last auto-reply timestamps from JSON. Supports old list format."""
     if not path.exists():
-        # Initialize with an empty array so future runs can persist state.
-        save_replied(path, set())
-        return set()
+        save_replied(path, {})
+        return {}
 
     try:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
 
-        if not isinstance(data, list):
-            logging.warning("%s should contain a JSON list. Resetting replied data.", path)
-            save_replied(path, set())
-            return set()
+        # New format: {"<user_id>": <unix_ts>}
+        if isinstance(data, dict):
+            result: Dict[int, int] = {}
+            for user_id, ts in data.items():
+                try:
+                    result[int(user_id)] = int(ts)
+                except (TypeError, ValueError):
+                    continue
+            if len(result) != len(data):
+                save_replied(path, result)
+            return result
 
-        return {int(user_id) for user_id in data}
+        # Backward compatibility: old format [user_id, ...]
+        if isinstance(data, list):
+            converted = {int(user_id): 0 for user_id in data}
+            save_replied(path, converted)
+            return converted
+
+        logging.warning("%s has unsupported format. Resetting replied data.", path)
+        save_replied(path, {})
+        return {}
     except Exception as exc:
         logging.warning("Failed to read %s (%s). Resetting replied data.", path, exc)
-        save_replied(path, set())
-        return set()
+        save_replied(path, {})
+        return {}
 
 
-def save_replied(path: Path, replied_ids: Set[int]) -> None:
-    """Persist replied user IDs to disk as a JSON list."""
-    save_json_list(path, replied_ids)
+def save_replied(path: Path, replied_map: Dict[int, int]) -> None:
+    """Persist user_id -> last_reply_unix_ts map to disk."""
+    payload = {str(user_id): int(ts) for user_id, ts in sorted(replied_map.items())}
     with path.open("w", encoding="utf-8") as f:
-        json.dump(sorted(replied_ids), f, indent=2)
+        json.dump(payload, f, indent=2)
 
 
 def load_replies(path: Path) -> List[str]:
@@ -152,7 +171,6 @@ def load_replies(path: Path) -> List[str]:
     replies = [line for line in lines if line]
 
     if not replies:
-        # Guarantee at least one reply to avoid random.choice errors.
         replies = ["I'm currently away. I'll get back to you soon."]
 
     return replies
@@ -163,7 +181,7 @@ def ensure_data_files_exist() -> None:
     if not BLACKLIST_PATH.exists():
         save_json_list(BLACKLIST_PATH, set())
     if not REPLIED_PATH.exists():
-        save_replied(REPLIED_PATH, set())
+        save_replied(REPLIED_PATH, {})
     if not REPLIES_PATH.exists():
         REPLIES_PATH.write_text("I'm currently away. I'll get back to you soon.\n", encoding="utf-8")
 
@@ -194,6 +212,18 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="USER_ID",
         help="Add one or more user IDs to blacklist.json and exit.",
     )
+    parser.add_argument(
+        "--delete-blacklist",
+        nargs="+",
+        type=int,
+        metavar="USER_ID",
+        help="Delete one or more user IDs from blacklist.json and exit.",
+    )
+    parser.add_argument(
+        "--reset-replied",
+        action="store_true",
+        help="Reset replied.json history and exit.",
+    )
     return parser
 
 
@@ -215,6 +245,18 @@ def handle_cli_actions(args: argparse.Namespace) -> bool:
         blacklist.update(args.add_blacklist)
         save_json_list(BLACKLIST_PATH, blacklist)
         print("Updated blacklist:", sorted(blacklist))
+        return True
+
+    if args.delete_blacklist:
+        blacklist = load_blacklist(BLACKLIST_PATH)
+        blacklist.difference_update(args.delete_blacklist)
+        save_json_list(BLACKLIST_PATH, blacklist)
+        print("Updated blacklist:", sorted(blacklist))
+        return True
+
+    if args.reset_replied:
+        save_replied(REPLIED_PATH, {})
+        print("Replied history reset: replied.json")
         return True
 
     return False
@@ -240,13 +282,29 @@ def is_offline() -> bool:
 # Main bot logic
 # ------------------------------
 
+def register_activity_handlers(client, events) -> None:
+    """Register activity-tracking handlers with broad Telethon compatibility."""
+    # Track outgoing messages as activity (indicates user/account is active).
+    @client.on(events.NewMessage(outgoing=True))
+    async def on_outgoing_message(_event):
+        mark_activity("outgoing message")
+
+    # We intentionally avoid MessageRead handlers because some Telethon builds
+    # have incompatible MessageRead signatures/behavior across environments.
+    # Outgoing messages are the most reliable cross-version activity signal.
+
 async def main() -> None:
     """Entrypoint for running the Telethon userbot."""
-    global blacklist_user_ids, replied_user_ids, replies_pool
+    global blacklist_user_ids, replied_user_timestamps, replies_pool
 
     # Import Telethon only when actually starting the bot,
     # so terminal maintenance commands work without this dependency.
-    from telethon import TelegramClient, events
+    try:
+        from telethon import TelegramClient, events
+    except ImportError as exc:
+        raise RuntimeError(
+            "Telethon is not installed. Run: pip install -r requirements.txt"
+        ) from exc
 
     # Resolve credentials with env-first and constant fallback strategy.
     api_id = API_ID if API_ID else API_ID_FALLBACK
@@ -262,23 +320,12 @@ async def main() -> None:
 
     # Load all data files once at startup.
     blacklist_user_ids = load_blacklist(BLACKLIST_PATH)
-    replied_user_ids = load_replied(REPLIED_PATH)
+    replied_user_timestamps = load_replied(REPLIED_PATH)
     replies_pool = load_replies(REPLIES_PATH)
 
     client = TelegramClient(SESSION_NAME, api_id, api_hash)
 
-    # Track outgoing messages as activity (indicates user/account is active).
-    @client.on(events.NewMessage(outgoing=True))
-    async def on_outgoing_message(_event):
-        mark_activity("outgoing message")
-
-    # Track read acknowledgements as another signal of activity.
-    # NOTE: some Telethon versions do not support MessageRead(outbox=True),
-    # so we subscribe to MessageRead() and filter by event.outbox when present.
-    @client.on(events.MessageRead())
-    async def on_message_read(event):
-        if getattr(event, "outbox", False):
-            mark_activity("message read")
+    register_activity_handlers(client, events)
 
     # Auto-reply only to new incoming private messages.
     @client.on(events.NewMessage(incoming=True))
@@ -295,9 +342,10 @@ async def main() -> None:
             logging.info("Skipping blacklisted user: %s", sender_id)
             return
 
-        # Only one automatic reply per user.
-        if sender_id in replied_user_ids:
-            logging.info("Already auto-replied to user %s. Skipping.", sender_id)
+        # Limit auto-replies to once per user per REPLY_COOLDOWN_SECONDS.
+        last_reply_ts = replied_user_timestamps.get(sender_id, 0)
+        if (time.time() - last_reply_ts) < REPLY_COOLDOWN_SECONDS:
+            logging.info("Cooldown active for user %s. Skipping.", sender_id)
             return
 
         # Reply only when account has been inactive for 3+ minutes.
@@ -311,9 +359,9 @@ async def main() -> None:
         await event.reply(reply_text)
         logging.info("Sent auto-reply to user %s", sender_id)
 
-        # Persist one-time reply state.
-        replied_user_ids.add(sender_id)
-        save_replied(REPLIED_PATH, replied_user_ids)
+        # Persist latest reply timestamp for cooldown logic.
+        replied_user_timestamps[sender_id] = int(time.time())
+        save_replied(REPLIED_PATH, replied_user_timestamps)
 
         # Sending a message counts as account activity.
         mark_activity("auto-reply sent")
@@ -342,3 +390,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         logging.info("Userbot stopped by user.")
+    except Exception as exc:
+        logging.error("Startup error: %s", exc)
+        raise SystemExit(1)
