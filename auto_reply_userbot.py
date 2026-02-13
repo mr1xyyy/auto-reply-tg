@@ -275,6 +275,12 @@ async def main() -> None:
         mark_activity("outgoing message")
 
     # Track read acknowledgements as another signal of activity.
+    # NOTE: some Telethon versions do not support MessageRead(outbox=True),
+    # so we subscribe to MessageRead() and filter by event.outbox when present.
+    @client.on(events.MessageRead())
+    async def on_message_read(event):
+        if getattr(event, "outbox", False):
+            mark_activity("message read")
     @client.on(events.MessageRead(outbox=True))
     async def on_message_read(_event):
         mark_activity("message read")
